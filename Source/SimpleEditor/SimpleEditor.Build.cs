@@ -8,7 +8,10 @@ public class SimpleEditor : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" ,"LevelEditor"});
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" ,
+			
+			"Slate","SlateCore",
+			"LevelEditor","UnrealEd"});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
