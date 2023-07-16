@@ -16,7 +16,8 @@ public:
 
 	//恢复UI
 	static void RecoveryUI();
-
+	
+	
 private:
 	static TSharedPtr<SWidget>BuildTabManagerWidget(TSharedPtr<SWidget> InsertWidget); //静态的创建TabManager的方法
 
@@ -28,4 +29,6 @@ private:
 		TArray<TSharedPtr<SWidget>> P5_Childs;
 	};
 	static TArray<FViewportWidgetData> ModifyViewport;
+
+	friend class USinpleEditorGameEngine;
 };

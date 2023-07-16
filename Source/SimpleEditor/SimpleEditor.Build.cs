@@ -11,9 +11,17 @@ public class SimpleEditor : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" ,
 			
 			"Slate","SlateCore",
-			"LevelEditor","UnrealEd"});
+			"MovieSceneCapture",
+			"RenderCore",
+			"RHI",
+			"EngineSettings",
+			"ApplicationCore",
+			"LevelEditor","UnrealEd","PIEPreviewDeviceProfileSelector" 
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "MovieSceneCapture", "Media", "MoviePlayerProxy" });
+
+		});
+
+		PrivateDependencyModuleNames.AddRange(new string[] { });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

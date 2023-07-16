@@ -23,9 +23,13 @@ public:
 
 	//因为CreateGameViewport不是虚函数，不能用一般的手段来覆写，所以用一个函数来进行一次代替
 	void CreateGameViewport_New(UGameViewportClient* GameViewportClient);
-
+	void CreateGameViewportWidget_New(UGameViewportClient* GameViewportClient);
 	void SwitchGameWindowToUseGameViewport_New();
 
+	FSceneViewport * GetGameSceneViewport(UGameViewportClient * ViewportClient) const ;
+
+	TSharedPtr<SViewport> New_GameViewportWidget;
+	
 	double LastTimeLogsFlushed2=0.0f;
 	
 };

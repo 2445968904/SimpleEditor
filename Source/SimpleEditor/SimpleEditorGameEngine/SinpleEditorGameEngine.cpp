@@ -9,12 +9,13 @@
 #include "EngineModule.h"
 #include "GameMapsSettings.h"
 #include "IMediaModule.h"
+
 #include "MoviePlayerProxy.h"
 #include "MovieSceneCaptureModule.h"
+
 #include "RenderGraphBuilder.h"
 #include "RenderTargetPool.h"
 #include "StudioAnalytics.h"
-#include "Android/AndroidPlatformSplash.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/ReflectionCaptureComponent.h"
 #include "Components/SkyLightComponent.h"
@@ -24,6 +25,24 @@
 #include "Misc/EmbeddedCommunication.h"
 #include "MovieSceneCapture/Public/IMovieSceneCapture.h"
 #include "Net/NetworkProfiler.h"
+#include "SimpleEditor/MultiWindowMgr/MultiWindowMgr.h"
+#include "Slate/SceneViewport.h"
+#include "Slate/SGameLayerManager.h"
+
+
+#if PLATFORM_WINDOWS
+#include "WIndows/WindowsPlatformSplash.h"
+# elif  PLATFORM_MAC
+#include "Mac/MacPlatformSplash.h"
+#endif 
+
+
+#if WITH_EDITOR
+#include "PIEPreviewDeviceProfileSelectorModule.h"
+#include "IPIEPreviewDeviceModule.h"
+#endif
+
+
 
 class IMovieSceneCaptureInterface;
 class UGameMapsSettings;
@@ -372,6 +391,7 @@ void USinpleEditorGameEngine::Tick(float DeltaSeconds, bool bIdleMode)
 		if ( bFirstTime )
 		{
 			bFirstTime = false;
+			//FWindowsPlatformSplash::FPlatformSplash::Hide();
 			FPlatformSplash::Hide();
 			if ( GameViewportWindow.IsValid() )
 			{
@@ -380,7 +400,8 @@ void USinpleEditorGameEngine::Tick(float DeltaSeconds, bool bIdleMode)
 				{
 					GameViewportWindow.Pin()->ShowWindow();
 				}
-				FSlateApplication::Get().RegisterGameViewport( GameViewportWidget.ToSharedRef() );
+				//临时代替
+				FSlateApplication::Get().RegisterGameViewport( New_GameViewportWidget.ToSharedRef() );
 			}
 		}
 	}
@@ -437,10 +458,138 @@ void USinpleEditorGameEngine::Tick(float DeltaSeconds, bool bIdleMode)
 
 void USinpleEditorGameEngine::CreateGameViewport_New(UGameViewportClient* GameViewportClient)
 {
+	check(GameViewportWindow.IsValid());
+
+	//先拦截一下，暂时不让引擎得到游戏界面的Widget,之后包裹一下再还给引擎
+	if( !New_GameViewportWidget.IsValid() )
+	{
+		CreateGameViewportWidget_New( GameViewportClient );
+	}
+	TSharedRef<SViewport> GameViewportWidgetRef = New_GameViewportWidget.ToSharedRef();
+
+	auto Window = GameViewportWindow.Pin();
+
+	Window->SetOnWindowClosed( FOnWindowClosed::CreateUObject( this, &UGameEngine::OnGameWindowClosed ) );
+
+	// SAVEWINPOS tells us to load/save window positions to user settings (this is disabled by default)
+	int32 SaveWinPos;
+	if (FParse::Value(FCommandLine::Get(), TEXT("SAVEWINPOS="), SaveWinPos) && SaveWinPos > 0 )
+	{
+		// Get WinX/WinY from GameSettings, apply them if valid.
+		FIntPoint PiePosition = GetGameUserSettings()->GetWindowPosition();
+		if (PiePosition.X >= 0 && PiePosition.Y >= 0)
+		{
+			int32 WinX = GetGameUserSettings()->GetWindowPosition().X;
+			int32 WinY = GetGameUserSettings()->GetWindowPosition().Y;
+			Window->MoveWindowTo(FVector2D(WinX, WinY));
+		}
+		Window->SetOnWindowMoved( FOnWindowMoved::CreateUObject( this, &UGameEngine::OnGameWindowMoved ) );
+	}
+
+	SceneViewport = MakeShareable( GameViewportClient->CreateGameViewport(GameViewportWidgetRef) );
+	GameViewportClient->Viewport = SceneViewport.Get();
+	//GameViewportClient->CreateHighresScreenshotCaptureRegionWidget(); //  Disabled until mouse based input system can be made to work correctly.
+
+	// The viewport widget needs an interface so it knows what should render
+	GameViewportWidgetRef->SetViewportInterface( SceneViewport.ToSharedRef() );
+
+	FSceneViewport* ViewportFrame = SceneViewport.Get();
+
+	GameViewport->SetViewportFrame(ViewportFrame);
+
+	GameViewport->GetGameLayerManager()->SetSceneViewport(ViewportFrame);
+
+	FViewport::ViewportResizedEvent.AddUObject(this, &UGameEngine::OnViewportResized);
+
 	
+}
+
+void USinpleEditorGameEngine::CreateGameViewportWidget_New(UGameViewportClient* GameViewportClient)
+{
+	bool bRenderDirectlyToWindow = (!StartupMovieCaptureHandle.IsValid() || IMovieSceneCaptureModule::Get().IsStereoAllowed()) && GIsDumpingMovie == 0;
+
+	TSharedRef<SOverlay> ViewportOverlayWidgetRef = SNew( SOverlay );
+
+	TSharedRef<SGameLayerManager> GameLayerManagerRef = SNew(SGameLayerManager)
+		.SceneViewport_UObject(this, &USinpleEditorGameEngine::GetGameSceneViewport, GameViewportClient)
+		[
+			ViewportOverlayWidgetRef
+		];
+
+	// when we're running in a "device simulation" window, render the scene to an intermediate texture
+	// in the mobile device "emulation" case this is needed to properly position the viewport (as a widget) inside its bezel
+	#if WITH_EDITOR
+	auto PIEPreviewDeviceModule = FModuleManager::LoadModulePtr<IPIEPreviewDeviceModule>("PIEPreviewDeviceProfileSelector");
+	if (PIEPreviewDeviceModule && FPIEPreviewDeviceModule::IsRequestingPreviewDevice())
+	{
+		bRenderDirectlyToWindow = false;
+		PIEPreviewDeviceModule->SetGameLayerManagerWidget(GameLayerManagerRef);
+	}
+#endif
+
+	const bool bStereoAllowed = bRenderDirectlyToWindow;
+
+	TSharedRef<SViewport> GameViewportWidgetRef = 
+		SNew( SViewport )
+			// Render directly to the window backbuffer unless capturing a movie or getting screenshots
+			// @todo TEMP
+			.RenderDirectlyToWindow(bRenderDirectlyToWindow)
+			//gamma handled by the scene renderer
+			.EnableGammaCorrection(false)
+			.EnableStereoRendering(bStereoAllowed)
+			[
+				GameLayerManagerRef
+			];
+
+	GameViewportWidget = GameViewportWidgetRef;
+
+	GameViewportClient->SetViewportOverlayWidget( GameViewportWindow.Pin(), ViewportOverlayWidgetRef );
+	GameViewportClient->SetGameLayerManager(GameLayerManagerRef);
 }
 
 void USinpleEditorGameEngine::SwitchGameWindowToUseGameViewport_New()
 {
 	
+
+	
+	//if (GameViewportWindow.IsValid() && GameViewportWindow.Pin()->GetContent() != GameViewportWidget)
+	{
+		TSharedPtr<SWidget> Container;
+		
+		//if( !GameViewportWidget.IsValid() )
+		{
+			//CreateGameViewport( GameViewport );
+			//要创建新的布局
+			Container = FMultiWindowMgr::BuildTabManagerWidget(New_GameViewportWidget);
+		}
+		
+		//TSharedRef<SViewport> GameViewportWidgetRef = GameViewportWidget.ToSharedRef();
+		//还给GameVIewportWidget,只不过值的类型不是SViewport
+		GameViewportWidget = StaticCastSharedRef<SViewport>(Container.Get()->AsShared());
+
+		
+		TSharedPtr<SWindow> GameViewportWindowPtr = GameViewportWindow.Pin();
+		
+		GameViewportWindowPtr->SetContent(Container.ToSharedRef());
+		GameViewportWindowPtr->SlatePrepass(FSlateApplication::Get().GetApplicationScale() * GameViewportWindowPtr->GetNativeWindow()->GetDPIScaleFactor());
+		
+		if ( SceneViewport.IsValid() )
+		{
+			SceneViewport->ResizeFrame((uint32)GSystemResolution.ResX, (uint32)GSystemResolution.ResY, GSystemResolution.WindowMode);
+		}
+
+		// Registration of the game viewport to that messages are correctly received.
+		// Could be a re-register, however it's necessary after the window is set.
+		FSlateApplication::Get().RegisterGameViewport(New_GameViewportWidget.ToSharedRef());
+
+		if (FSlateApplication::IsInitialized())
+		{
+			FSlateApplication::Get().SetAllUserFocusToGameViewport(EFocusCause::SetDirectly);
+		}
+	}
+}
+
+FSceneViewport* USinpleEditorGameEngine::GetGameSceneViewport(UGameViewportClient* ViewportClient) const
+{
+	return ViewportClient->GetGameViewport();
 }
