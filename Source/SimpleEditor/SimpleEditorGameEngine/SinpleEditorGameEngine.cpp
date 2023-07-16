@@ -124,7 +124,7 @@ void USinpleEditorGameEngine::Init(IEngineLoop* InEngineLoop)
 
 		CreateGameViewport_New( ViewportClient );
 
-		if( !bWindowAlreadyExists )
+		//if( !bWindowAlreadyExists )
 		{
 			SwitchGameWindowToUseGameViewport_New();
 		}
@@ -460,7 +460,7 @@ void USinpleEditorGameEngine::CreateGameViewport_New(UGameViewportClient* GameVi
 {
 	check(GameViewportWindow.IsValid());
 
-	//先拦截一下，暂时不让引擎得到游戏界面的Widget,之后包裹一下再还给引擎
+	
 	if( !New_GameViewportWidget.IsValid() )
 	{
 		CreateGameViewportWidget_New( GameViewportClient );
@@ -499,7 +499,8 @@ void USinpleEditorGameEngine::CreateGameViewport_New(UGameViewportClient* GameVi
 
 	GameViewport->GetGameLayerManager()->SetSceneViewport(ViewportFrame);
 
-	FViewport::ViewportResizedEvent.AddUObject(this, &UGameEngine::OnViewportResized);
+	//这里需要更改，不然视口的大小在每次启动都会出现问题
+	FViewport::ViewportResizedEvent.AddUObject(this, &USinpleEditorGameEngine::OnViewportResized_New);
 
 	
 }
@@ -526,7 +527,8 @@ void USinpleEditorGameEngine::CreateGameViewportWidget_New(UGameViewportClient* 
 		PIEPreviewDeviceModule->SetGameLayerManagerWidget(GameLayerManagerRef);
 	}
 #endif
-
+	//非常重要不然绘制不出场景
+	bRenderDirectlyToWindow = false ;
 	const bool bStereoAllowed = bRenderDirectlyToWindow;
 
 	TSharedRef<SViewport> GameViewportWidgetRef = 
@@ -540,8 +542,8 @@ void USinpleEditorGameEngine::CreateGameViewportWidget_New(UGameViewportClient* 
 			[
 				GameLayerManagerRef
 			];
-
-	GameViewportWidget = GameViewportWidgetRef;
+	//先拦截一下，暂时不让引擎得到游戏界面的Widget,之后包裹一下再还给引擎
+	New_GameViewportWidget = GameViewportWidgetRef;
 
 	GameViewportClient->SetViewportOverlayWidget( GameViewportWindow.Pin(), ViewportOverlayWidgetRef );
 	GameViewportClient->SetGameLayerManager(GameLayerManagerRef);
@@ -554,7 +556,7 @@ void USinpleEditorGameEngine::SwitchGameWindowToUseGameViewport_New()
 	
 	//if (GameViewportWindow.IsValid() && GameViewportWindow.Pin()->GetContent() != GameViewportWidget)
 	{
-		TSharedPtr<SWidget> Container;
+		TSharedPtr<SWidget> Container;//就是我们的TabManager
 		
 		//if( !GameViewportWidget.IsValid() )
 		{
@@ -564,7 +566,7 @@ void USinpleEditorGameEngine::SwitchGameWindowToUseGameViewport_New()
 		}
 		
 		//TSharedRef<SViewport> GameViewportWidgetRef = GameViewportWidget.ToSharedRef();
-		//还给GameVIewportWidget,只不过值的类型不是SViewport
+		//还给GameViewportWidget,只不过值的类型不是SViewport
 		GameViewportWidget = StaticCastSharedRef<SViewport>(Container.Get()->AsShared());
 
 		
@@ -592,4 +594,25 @@ void USinpleEditorGameEngine::SwitchGameWindowToUseGameViewport_New()
 FSceneViewport* USinpleEditorGameEngine::GetGameSceneViewport(UGameViewportClient* ViewportClient) const
 {
 	return ViewportClient->GetGameViewport();
+}
+
+void USinpleEditorGameEngine::OnViewportResized_New(FViewport* Viewport, uint32 Unused)
+{
+	if (Viewport && Viewport == SceneViewport.Get() && GameViewportWindow.IsValid() && GameViewportWindow.Pin()->GetWindowMode() == EWindowMode::Windowed)
+	{
+		FVector2D Size = GameViewportWindow.Pin()->GetSizeInScreen();
+		
+		const FIntPoint ViewportSize (Size.X,Size.Y);//Viewport->GetSizeXY();
+		if (ViewportSize.X > 0 && ViewportSize.Y > 0)
+		{
+			GSystemResolution.ResX = ViewportSize.X;
+			GSystemResolution.ResY = ViewportSize.Y;
+			FSystemResolution::RequestResolutionChange(GSystemResolution.ResX, GSystemResolution.ResY, EWindowMode::Windowed);
+
+			UGameUserSettings* Settings = GetGameUserSettings();
+			Settings->SetScreenResolution(ViewportSize);
+			Settings->ConfirmVideoMode();
+			Settings->RequestUIUpdate();
+		}
+	}
 }

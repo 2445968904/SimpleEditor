@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include <Blueprint/UserWidget.h>
 
 /**
  * 
@@ -31,4 +32,13 @@ private:
 	static TArray<FViewportWidgetData> ModifyViewport;
 
 	friend class USinpleEditorGameEngine;
+
+	
+
+public:
+
+	static TSharedPtr<class SOverlay> AssetViewUI;//容纳新UI的
+	static TSharedPtr<SWidget> AssetViewUIHandle;//容纳待会会创建的资源UI,一直把这个UI抓住不让其释放
+	static void RegisterAssetViewUI(class UUserWidget* UI);
+	static void RegisterAssetViewUI(TSharedPtr<SWidget> UI);
 };

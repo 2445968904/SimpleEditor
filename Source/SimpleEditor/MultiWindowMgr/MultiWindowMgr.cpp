@@ -10,6 +10,9 @@
 
 TArray<FMultiWindowMgr::FViewportWidgetData> FMultiWindowMgr::ModifyViewport;
 
+TSharedPtr<class SOverlay> FMultiWindowMgr::AssetViewUI ;
+TSharedPtr<SWidget> FMultiWindowMgr::AssetViewUIHandle ;
+
 void FMultiWindowMgr::SeparateUI()
 {
 	FLevelEditorModule & LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
@@ -125,7 +128,16 @@ void FMultiWindowMgr::RecoveryUI()
 				];
 			}
 		}
+		//清空
 		ModifyViewport.Empty();
+		//这里不是报错，而是因为静态变量不会自动释放，下次进入变量还是上一次创建的值，是不正确的
+		FMultiWindowMgr::AssetViewUI.Reset();
+		FMultiWindowMgr::AssetViewUIHandle.Reset();
+
+		//
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner("SceneViewTab");
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner("AssetViewTab");
+		
 		//通知引擎重新恢复UI了
 		FLevelEditorModule & LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
 		LevelEditorModule.OnTabContentChanged().Broadcast();
@@ -223,12 +235,82 @@ TSharedPtr<SWidget> FMultiWindowMgr::BuildTabManagerWidget(TSharedPtr<SWidget> I
 	)
 	);
 		
-	
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner("AssetViewTab",FOnSpawnTab::CreateLambda([&](const FSpawnTabArgs &SpawnTabArgs)
+		{
+			TSharedRef<SDockTab> s = SNew(SDockTab)
+			.TabRole(ETabRole::PanelTab)
+		[
+			SAssignNew(AssetViewUI,SOverlay)
+		];
+		return s;
+		}
+	)
+	);
 
+
+	//生成Menu
+	FMenuBarBuilder MenuBarBuilder = FMenuBarBuilder(TSharedPtr<FUICommandList>());
+
+	//接下来是添加往下可以拉出来的菜单选项
+	MenuBarBuilder.AddPullDownMenu(
+		FText::FromString(TEXT("Windows")),
+		FText::FromString(TEXT("Windows")),
+		FNewMenuDelegate::CreateLambda([](FMenuBuilder& MenuBuilder)
+		{
+			MenuBuilder.AddMenuEntry(
+				FText::FromString("AssetView"),
+				FText::FromString("AssetView"),
+				FSlateIcon(),
+				FUIAction(
+					FExecuteAction::CreateLambda([]()
+					{
+						FTabId id = FTabId("AssetViewTab");//用这个函数来找到AssetViewTab，这样就可以重建了
+						FGlobalTabmanager::Get()->TryInvokeTab(id);//Try to open tab if it is closed at the last known location. If it already exists, it will draw attention to the tab
+						FMultiWindowMgr::RegisterAssetViewUI(AssetViewUIHandle);//需要重新注册是因为每次DockTab重新被打开,里面的UI是重新创建的，所以SOverlay里面是空的，就需要重新注册来往SOverlay里添加UI
+			
+					}
+
+					)
+				)
+
+			);
+			
+		})
+	);
 	
 	//上面是样式 ，下面是生成UI的函数 loadedlayout是刚刚定义的布局
+	//生成UI
 	TSharedPtr<SWidget> MainFrameContent = FGlobalTabmanager::Get()->RestoreFrom(LoadedLayout,nullptr,false);
 
-	return MainFrameContent;
+	//return MainFrameContent;
+
+	return
+	
+	SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			MenuBarBuilder.MakeWidget()
+		]//菜单栏
+		+SVerticalBox::Slot()
+		[
+			MainFrameContent.ToSharedRef()
+		];//以前的视口布局
+	
+}
+
+void FMultiWindowMgr::RegisterAssetViewUI(UUserWidget* UI)
+{
+	//这里是要把UMG转化为Slate
+	FMultiWindowMgr::RegisterAssetViewUI(UI->TakeWidget());
+}
+
+void FMultiWindowMgr::RegisterAssetViewUI(TSharedPtr<SWidget> UI)
+{
+	FMultiWindowMgr::AssetViewUIHandle = UI ;
+	//添加UI到SOverlay
+
+	
+	
 }
 #pragma optimize("",on)

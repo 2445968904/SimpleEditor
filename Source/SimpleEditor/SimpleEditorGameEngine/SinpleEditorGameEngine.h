@@ -25,8 +25,11 @@ public:
 	void CreateGameViewport_New(UGameViewportClient* GameViewportClient);
 	void CreateGameViewportWidget_New(UGameViewportClient* GameViewportClient);
 	void SwitchGameWindowToUseGameViewport_New();
+	
 
 	FSceneViewport * GetGameSceneViewport(UGameViewportClient * ViewportClient) const ;
+
+	void OnViewportResized_New(FViewport* Viewport,uint32 Unused);
 
 	TSharedPtr<SViewport> New_GameViewportWidget;
 	
